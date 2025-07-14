@@ -8,12 +8,14 @@ import {
   Modal,
   TextInput,
   Pressable,
+  Animated,
+  Easing,
+  Alert,
 } from 'react-native';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert } from 'react-native';
 
 const Expenditures = () => {
   const navigation = useNavigation();
@@ -26,6 +28,25 @@ const Expenditures = () => {
     description: '',
     amount: '',
   });
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
+  // Animation effects
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        easing: Easing.out(Easing.exp),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   // Function to get current month and year
   const getCurrentMonthYear = () => {
@@ -94,7 +115,6 @@ const Expenditures = () => {
     const interval = setInterval(() => {
       const now = new Date();
       if (now.getDate() === 1) {
-        // First day of month
         const checkNewMonth = async () => {
           const currentMonthYear = getCurrentMonthYear();
           const storedMonths = await AsyncStorage.getItem(
@@ -123,30 +143,6 @@ const Expenditures = () => {
 
     return () => clearInterval(interval);
   }, []);
-
-  // const resetDefaultMonths = async () => {
-  //   try {
-  //     const defaultMonths = [
-  //       { id: '1', name: 'June 2025', total: 0 },
-  //       { id: '2', name: 'May 2025', total: 0 },
-  //       { id: '3', name: 'April 2025', total: 0 },
-  //       { id: '4', name: 'March 2025', total: 0 },
-  //     ];
-
-  //     await AsyncStorage.removeItem('@monthly_expenditures');
-  //     await AsyncStorage.setItem(
-  //       '@monthly_expenditures',
-  //       JSON.stringify(defaultMonths),
-  //     );
-  //     setMonths(defaultMonths);
-  //     console.log('Default months reset successfully');
-  //   } catch (error) {
-  //     console.error('Error resetting default months', error);
-  //   }
-  // };
-
-  // // Call this function when you want to reset
-  // resetDefaultMonths();
 
   // Load expenditures when a month is selected
   const handleMonthPress = async month => {
@@ -197,16 +193,12 @@ const Expenditures = () => {
     saveExpenditures();
   }, [expenditures]);
 
-  // Add this function to Expenditures.js
+  // Deduct from balance
   const deductFromBalance = async amount => {
     try {
       const balanceData = await AsyncStorage.getItem('@current_balance');
       let currentBalance = balanceData ? parseFloat(balanceData) : 800000;
-
-      // For adding expenditure (amount is positive), we deduct from balance
-      // For deleting expenditure (amount is negative), we add back to balance
       currentBalance -= amount;
-
       await AsyncStorage.setItem('@current_balance', currentBalance.toString());
       return true;
     } catch (error) {
@@ -232,7 +224,7 @@ const Expenditures = () => {
       return;
     }
 
-    // Deduct from balance (pass positive amount to deduct)
+    // Deduct from balance
     const success = await deductFromBalance(amount);
     if (!success) {
       Alert.alert('Error', 'Failed to update balance');
@@ -255,7 +247,7 @@ const Expenditures = () => {
     const expenditureToDelete = expenditures.find(exp => exp.id === id);
     if (!expenditureToDelete) return;
 
-    // Add back to balance (pass negative amount to add back)
+    // Add back to balance
     const success = await deductFromBalance(-expenditureToDelete.amount);
     if (!success) {
       Alert.alert('Error', 'Failed to update balance');
@@ -268,7 +260,7 @@ const Expenditures = () => {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color="#1a237e" />
+        <ActivityIndicator size="large" color="#6a11cb" />
       </View>
     );
   }
@@ -277,33 +269,49 @@ const Expenditures = () => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={24} color="#000" />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <Icon name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerText}>Monthly Expenditures</Text>
-        <View></View>
+        <View style={{ width: 24 }} />
       </View>
 
       {/* Months List */}
-      <FlatList
-        data={months}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.monthCard}
-            onPress={() => handleMonthPress(item)}
-          >
-            <Text style={styles.monthName}>{item.name}</Text>
-            <View style={styles.amountContainer}>
-              <Text style={styles.amountText}>
-                Rs. {item.total.toLocaleString()}
-              </Text>
-              <Icon name="chevron-right" size={24} color="#666" />
-            </View>
-          </TouchableOpacity>
-        )}
-        contentContainerStyle={styles.listContainer}
-      />
+      <Animated.View
+        style={[
+          styles.contentContainer,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+        ]}
+      >
+        <FlatList
+          data={months}
+          keyExtractor={item => item.id}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.monthCard}
+              onPress={() => handleMonthPress(item)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.monthInfo}>
+                <View style={styles.monthIcon}>
+                  <Icon name="calendar-today" size={20} color="#6a11cb" />
+                </View>
+                <Text style={styles.monthName}>{item.name}</Text>
+              </View>
+              <View style={styles.amountContainer}>
+                <Text style={styles.amountText}>
+                  Rs. {(Number(item.total) || 0).toLocaleString()}
+                </Text>
+                <Icon name="chevron-right" size={24} color="#6a11cb" />
+              </View>
+            </TouchableOpacity>
+          )}
+          contentContainerStyle={styles.listContainer}
+        />
+      </Animated.View>
 
       {/* Expenditure Modal */}
       <Modal
@@ -313,8 +321,11 @@ const Expenditures = () => {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowExpenditureModal(false)}>
-              <Icon name="close" size={24} color="#000" />
+            <TouchableOpacity
+              onPress={() => setShowExpenditureModal(false)}
+              style={styles.modalCloseButton}
+            >
+              <Icon name="close" size={24} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>
               {selectedMonth?.name} Expenditures
@@ -324,7 +335,9 @@ const Expenditures = () => {
 
           {expenditures.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Icon name="receipt" size={48} color="#ccc" />
+              <View style={styles.emptyIcon}>
+                <Icon name="receipt" size={48} color="#6a11cb" />
+              </View>
               <Text style={styles.emptyText}>No expenditures recorded yet</Text>
             </View>
           ) : (
@@ -341,12 +354,13 @@ const Expenditures = () => {
                   </View>
                   <View style={styles.expenditureAmountContainer}>
                     <Text style={styles.expenditureAmount}>
-                      Rs. {item.amount.toLocaleString()}
+                      Rs. {(Number(item.amount) || 0).toLocaleString()}
                     </Text>
                     <TouchableOpacity
                       onPress={() => deleteExpenditure(item.id)}
+                      style={styles.deleteButton}
                     >
-                      <Icon name="delete" size={20} color="#d32f2f" />
+                      <Icon name="delete" size={20} color="#fff" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -357,24 +371,37 @@ const Expenditures = () => {
 
           {/* Add Expenditure Form */}
           <View style={styles.addExpenditureContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Description"
-              value={newExpenditure.description}
-              onChangeText={text =>
-                setNewExpenditure({ ...newExpenditure, description: text })
-              }
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Amount"
-              keyboardType="numeric"
-              value={newExpenditure.amount}
-              onChangeText={text =>
-                setNewExpenditure({ ...newExpenditure, amount: text })
-              }
-            />
-            <Pressable style={styles.addButton} onPress={addExpenditure}>
+            <Text style={styles.formTitle}>Add New Expenditure</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Description</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter description"
+                placeholderTextColor="#888"
+                value={newExpenditure.description}
+                onChangeText={text =>
+                  setNewExpenditure({ ...newExpenditure, description: text })
+                }
+              />
+            </View>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Amount (Rs.)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter amount"
+                placeholderTextColor="#888"
+                keyboardType="numeric"
+                value={newExpenditure.amount}
+                onChangeText={text =>
+                  setNewExpenditure({ ...newExpenditure, amount: text })
+                }
+              />
+            </View>
+            <Pressable
+              style={styles.addButton}
+              onPress={addExpenditure}
+              android_ripple={{ color: '#4a00e0' }}
+            >
               <Text style={styles.addButtonText}>Add Expenditure</Text>
             </Pressable>
           </View>
@@ -394,66 +421,97 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
-    padding: 16,
+    backgroundColor: '#6a11cb',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: '#6a11cb',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  backButton: {
+    padding: 8,
   },
   headerText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a237e',
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  contentContainer: {
+    flex: 1,
+    paddingTop: 16,
   },
   listContainer: {
     padding: 16,
   },
   monthCard: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  monthInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  monthIcon: {
+    backgroundColor: 'rgba(106, 17, 203, 0.1)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   monthName: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1a237e',
-    marginBottom: 8,
+    color: '#333',
   },
   amountContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
   },
   amountText: {
     fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#6a11cb',
+    marginRight: 8,
   },
   modalContainer: {
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
   modalHeader: {
+    backgroundColor: '#6a11cb',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+  },
+  modalCloseButton: {
+    padding: 8,
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a237e',
+    fontWeight: '700',
+    color: '#fff',
+    textAlign: 'center',
   },
   emptyContainer: {
     flex: 1,
@@ -461,34 +519,48 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 40,
   },
+  emptyIcon: {
+    backgroundColor: 'rgba(106, 17, 203, 0.1)',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
   emptyText: {
     fontSize: 18,
     color: '#666',
-    marginTop: 16,
+    textAlign: 'center',
   },
   expenditureList: {
     padding: 16,
   },
   expenditureItem: {
     backgroundColor: '#fff',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
   },
   expenditureInfo: {
     flex: 1,
   },
   expenditureDescription: {
     fontSize: 16,
+    fontWeight: '600',
     color: '#333',
-    fontWeight: '500',
   },
   expenditureDate: {
     fontSize: 14,
-    color: '#666',
+    color: '#888',
     marginTop: 4,
   },
   expenditureAmountContainer: {
@@ -497,34 +569,69 @@ const styles = StyleSheet.create({
   },
   expenditureAmount: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1a237e',
-    marginRight: 12,
+    fontWeight: '700',
+    color: '#6a11cb',
+    marginRight: 16,
+  },
+  deleteButton: {
+    backgroundColor: '#ff4444',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   addExpenditureContainer: {
-    padding: 16,
+    padding: 20,
     backgroundColor: '#fff',
     borderTopWidth: 1,
     borderTopColor: '#eee',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  formTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#6a11cb',
+    marginBottom: 16,
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+    fontWeight: '500',
   },
   input: {
+    backgroundColor: '#f9f9f9',
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
+    borderRadius: 12,
+    padding: 16,
     fontSize: 16,
+    color: '#333',
   },
   addButton: {
-    backgroundColor: '#1a237e',
-    borderRadius: 8,
-    padding: 14,
+    backgroundColor: '#6a11cb',
+    borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#6a11cb',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
   },
   addButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 });
 

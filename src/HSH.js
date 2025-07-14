@@ -9,8 +9,10 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
 } from 'react-native';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -31,6 +33,36 @@ const HSH = () => {
     deliveryCost: '',
   });
   const [isEditing, setIsEditing] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
+  // Animation effects
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        easing: Easing.out(Easing.exp),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const monthExists = (monthList, monthYear) => {
+    return monthList.some(month => month.name === monthYear);
+  };
+
+  const getCurrentMonthYear = () => {
+    const currentDate = new Date();
+    const monthName = currentDate.toLocaleString('default', { month: 'long' });
+    const year = currentDate.getFullYear();
+    return `${monthName} ${year}`;
+  };
 
   // Initialize with sample data if empty
   useEffect(() => {
@@ -38,45 +70,36 @@ const HSH = () => {
       try {
         const storedMonths = await AsyncStorage.getItem('@hsh_months');
         if (storedMonths !== null) {
-          setMonths(JSON.parse(storedMonths));
+          const parsedMonths = JSON.parse(storedMonths);
+          const currentMonthYear = getCurrentMonthYear();
+
+          // Add current month if it doesn't exist
+          if (!monthExists(parsedMonths, currentMonthYear)) {
+            const newMonth = {
+              id: Date.now().toString(),
+              name: currentMonthYear,
+              total: 0,
+            };
+            const updatedMonths = [newMonth, ...parsedMonths];
+            setMonths(updatedMonths);
+            await AsyncStorage.setItem(
+              '@monthly_expenditures',
+              JSON.stringify(updatedMonths),
+            );
+          } else {
+            setMonths(parsedMonths);
+          }
         } else {
+          // Initialize with default months if no data exists
           const defaultMonths = [
-            {
-              id: '1',
-              name: 'June 2025',
-              orders: 0,
-              income: 0,
-              cost: 0,
-              profit: 0,
-            },
-            {
-              id: '2',
-              name: 'May 2025',
-              orders: 0,
-              income: 0,
-              cost: 0,
-              profit: 0,
-            },
-            {
-              id: '3',
-              name: 'April 2025',
-              orders: 0,
-              income: 0,
-              cost: 0,
-              profit: 0,
-            },
-            {
-              id: '4',
-              name: 'March 2025',
-              orders: 0,
-              income: 0,
-              cost: 0,
-              profit: 0,
-            },
+            { id: '1', name: 'June 2025', total: 0 },
+            { id: '2', name: 'May 2025', total: 0 },
+            { id: '3', name: 'April 2025', total: 0 },
+            { id: '4', name: 'March 2025', total: 0 },
           ];
           setMonths(defaultMonths);
           await AsyncStorage.setItem(
-            '@hsh_months',
+            '@monthly_expenditures',
             JSON.stringify(defaultMonths),
           );
         }
@@ -89,56 +112,6 @@ const HSH = () => {
 
     loadData();
   }, []);
-
-  // const resetDefaultMonths = async () => {
-  //   try {
-  //     const defaultMonths = [
-  //       {
-  //         id: '1',
-  //         name: 'June 2025',
-  //         orders: 0,
-  //         income: 0,
-  //         cost: 0,
-  //         profit: 0,
-  //       },
-  //       {
-  //         id: '2',
-  //         name: 'May 2025',
-  //         orders: 0,
-  //         income: 0,
-  //         cost: 0,
-  //         profit: 0,
-  //       },
-  //       {
-  //         id: '3',
-  //         name: 'April 2025',
-  //         orders: 0,
-  //         income: 0,
-  //         cost: 0,
-  //         profit: 0,
-  //       },
-  //       {
-  //         id: '4',
-  //         name: 'March 2025',
-  //         orders: 0,
-  //         income: 0,
-  //         cost: 0,
-  //         profit: 0,
-  //       },
-  //     ];
-
-  //     await AsyncStorage.removeItem('@hsh_months');
-  //     await AsyncStorage.setItem(
-  //       '@hsh_months',
-  //       JSON.stringify(defaultMonths),
-  //     );
-  //     setMonths(defaultMonths);
-  //     console.log('Default months reset successfully');
-  //   } catch (error) {
-  //     console.error('Error resetting default months', error);
-  //   }
-  // };
-  // resetDefaultMonths();
 
   const handleMonthPress = async month => {
     setSelectedMonth(month);
@@ -267,7 +240,7 @@ const HSH = () => {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color="#1a237e" />
+        <ActivityIndicator size="large" color="#6a11cb" />
       </View>
     );
   }
@@ -276,56 +249,72 @@ const HSH = () => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Icon name="arrow-back" size={24} color="#000" />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <Icon name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerText}>HandStitchHide</Text>
+        <Text style={styles.headerText}>HideNHaute</Text>
         <View style={{ width: 24 }} />
       </View>
 
       {/* Months List */}
-      <FlatList
-        data={months}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.monthCard}
-            onPress={() => handleMonthPress(item)}
-          >
-            <Text style={styles.monthName}>{item.name}</Text>
-            <View style={styles.monthDetails}>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Orders</Text>
-                <Text style={styles.detailValue}>{item.orders}</Text>
+      <Animated.View
+        style={[
+          styles.contentContainer,
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+        ]}
+      >
+        <FlatList
+          data={months}
+          keyExtractor={item => item.id}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.monthCard}
+              onPress={() => handleMonthPress(item)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.monthHeader}>
+                <View style={styles.monthIcon}>
+                  <Icon name="calendar-today" size={20} color="#6a11cb" />
+                </View>
+                <Text style={styles.monthName}>{item.name}</Text>
               </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Income</Text>
-                <Text style={styles.detailValue}>
-                  Rs. {item.income.toLocaleString()}
-                </Text>
+              <View style={styles.monthDetails}>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Orders</Text>
+                  <Text style={styles.detailValue}>{item.orders}</Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Income</Text>
+                  <Text style={styles.detailValue}>
+                    Rs. {(Number(item.income) || 0).toLocaleString()}
+                  </Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Cost</Text>
+                  <Text style={styles.detailValue}>
+                    Rs. {(Number(item.cost) || 0).toLocaleString()}
+                  </Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Profit</Text>
+                  <Text
+                    style={[
+                      styles.detailValue,
+                      { color: item.profit >= 0 ? '#4CAF50' : '#F44336' },
+                    ]}
+                  >
+                    Rs. {(Number(item.profit) || 0).toLocaleString()}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Cost</Text>
-                <Text style={styles.detailValue}>
-                  Rs. {item.cost.toLocaleString()}
-                </Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Profit</Text>
-                <Text
-                  style={[
-                    styles.detailValue,
-                    { color: item.profit >= 0 ? 'green' : 'red' },
-                  ]}
-                >
-                  Rs. {item.profit.toLocaleString()}
-                </Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
-        contentContainerStyle={styles.listContainer}
-      />
+            </TouchableOpacity>
+          )}
+          contentContainerStyle={styles.listContainer}
+        />
+      </Animated.View>
 
       {/* Entries Modal */}
       <Modal
@@ -335,8 +324,11 @@ const HSH = () => {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowEntryModal(false)}>
-              <Icon name="close" size={24} color="#000" />
+            <TouchableOpacity
+              onPress={() => setShowEntryModal(false)}
+              style={styles.modalCloseButton}
+            >
+              <Icon name="close" size={24} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>{selectedMonth?.name} Entries</Text>
             <View style={{ width: 24 }} />
@@ -344,7 +336,9 @@ const HSH = () => {
 
           {entries.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Icon name="receipt" size={48} color="#ccc" />
+              <View style={styles.emptyIcon}>
+                <Icon name="receipt" size={48} color="#6a11cb" />
+              </View>
               <Text style={styles.emptyText}>No entries recorded yet</Text>
             </View>
           ) : (
@@ -357,11 +351,11 @@ const HSH = () => {
                     <Text style={styles.entryProduct}>{item.productName}</Text>
                     <Text style={styles.entryDate}>{item.date}</Text>
                     <View style={styles.entryDetails}>
-                      <Text>
+                      <Text style={styles.entryDetailText}>
                         Received: Rs. {item.amountReceived.toLocaleString()}
                       </Text>
-                      <Text>
-                        Total Cost: Rs.{' '}
+                      <Text style={styles.entryDetailText}>
+                        Cost: Rs.{' '}
                         {(
                           item.productionCost + item.deliveryCost
                         ).toLocaleString()}
@@ -369,16 +363,17 @@ const HSH = () => {
                     </View>
                   </View>
                   <View style={styles.entryActions}>
-                    <TouchableOpacity onPress={() => handleEditEntry(item)}>
-                      <Icon
-                        name="edit"
-                        size={20}
-                        color="#1a237e"
-                        style={styles.actionIcon}
-                      />
+                    <TouchableOpacity
+                      onPress={() => handleEditEntry(item)}
+                      style={styles.editButton}
+                    >
+                      <Icon name="edit" size={20} color="#fff" />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => deleteEntry(item.id)}>
-                      <Icon name="delete" size={20} color="#d32f2f" />
+                    <TouchableOpacity
+                      onPress={() => deleteEntry(item.id)}
+                      style={styles.deleteButton}
+                    >
+                      <Icon name="delete" size={20} color="#fff" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -387,8 +382,13 @@ const HSH = () => {
             />
           )}
 
-          <Pressable style={styles.addButton} onPress={handleAddEntry}>
+          <Pressable
+            style={styles.addButton}
+            onPress={handleAddEntry}
+            android_ripple={{ color: '#4a00e0' }}
+          >
             <Text style={styles.addButtonText}>Add New Entry</Text>
+            <Icon name="add" size={20} color="#fff" />
           </Pressable>
         </View>
       </Modal>
@@ -401,8 +401,11 @@ const HSH = () => {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowAddEditModal(false)}>
-              <Icon name="close" size={24} color="#000" />
+            <TouchableOpacity
+              onPress={() => setShowAddEditModal(false)}
+              style={styles.modalCloseButton}
+            >
+              <Icon name="close" size={24} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>
               {isEditing ? 'Edit Entry' : 'Add New Entry'}
@@ -411,43 +414,63 @@ const HSH = () => {
           </View>
 
           <View style={styles.formContainer}>
-            <TextInput
-              style={styles.input}
-              placeholder="Product Name *"
-              value={currentEntry.productName}
-              onChangeText={text =>
-                setCurrentEntry({ ...currentEntry, productName: text })
-              }
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Amount Received (Rs.) *"
-              keyboardType="numeric"
-              value={currentEntry.amountReceived}
-              onChangeText={text =>
-                setCurrentEntry({ ...currentEntry, amountReceived: text })
-              }
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Production Cost (Rs.) - Optional"
-              keyboardType="numeric"
-              value={currentEntry.productionCost}
-              onChangeText={text =>
-                setCurrentEntry({ ...currentEntry, productionCost: text })
-              }
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Delivery Cost (Rs.) - Optional"
-              keyboardType="numeric"
-              value={currentEntry.deliveryCost}
-              onChangeText={text =>
-                setCurrentEntry({ ...currentEntry, deliveryCost: text })
-              }
-            />
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Product Name *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter product name"
+                placeholderTextColor="#888"
+                value={currentEntry.productName}
+                onChangeText={text =>
+                  setCurrentEntry({ ...currentEntry, productName: text })
+                }
+              />
+            </View>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Amount Received (Rs.) *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter amount received"
+                placeholderTextColor="#888"
+                keyboardType="numeric"
+                value={currentEntry.amountReceived}
+                onChangeText={text =>
+                  setCurrentEntry({ ...currentEntry, amountReceived: text })
+                }
+              />
+            </View>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Production Cost (Rs.)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter production cost"
+                placeholderTextColor="#888"
+                keyboardType="numeric"
+                value={currentEntry.productionCost}
+                onChangeText={text =>
+                  setCurrentEntry({ ...currentEntry, productionCost: text })
+                }
+              />
+            </View>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Delivery Cost (Rs.)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter delivery cost"
+                placeholderTextColor="#888"
+                keyboardType="numeric"
+                value={currentEntry.deliveryCost}
+                onChangeText={text =>
+                  setCurrentEntry({ ...currentEntry, deliveryCost: text })
+                }
+              />
+            </View>
 
-            <Pressable style={styles.submitButton} onPress={saveEntry}>
+            <Pressable
+              style={styles.submitButton}
+              onPress={saveEntry}
+              android_ripple={{ color: '#4a00e0' }}
+            >
               <Text style={styles.submitButtonText}>
                 {isEditing ? 'Update Entry' : 'Save Entry'}
               </Text>
@@ -469,71 +492,103 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
-    padding: 16,
+    backgroundColor: '#6a11cb',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    shadowColor: '#6a11cb',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  backButton: {
+    padding: 8,
   },
   headerText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a237e',
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  contentContainer: {
+    flex: 1,
+    paddingTop: 16,
   },
   listContainer: {
     padding: 16,
   },
   monthCard: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  monthHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  monthIcon: {
+    backgroundColor: 'rgba(106, 17, 203, 0.1)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   monthName: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1a237e',
-    marginBottom: 8,
+    color: '#333',
   },
   monthDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: 8,
   },
   detailItem: {
     alignItems: 'center',
+    flex: 1,
   },
   detailLabel: {
     fontSize: 12,
     color: '#666',
+    marginBottom: 4,
   },
   detailValue: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   modalContainer: {
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
   modalHeader: {
+    backgroundColor: '#6a11cb',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+  },
+  modalCloseButton: {
+    padding: 8,
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a237e',
+    fontWeight: '700',
+    color: '#fff',
+    textAlign: 'center',
   },
   emptyContainer: {
     flex: 1,
@@ -541,82 +596,137 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 40,
   },
+  emptyIcon: {
+    backgroundColor: 'rgba(106, 17, 203, 0.1)',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
   emptyText: {
     fontSize: 18,
     color: '#666',
-    marginTop: 16,
+    textAlign: 'center',
   },
   entryList: {
     padding: 16,
   },
   entryItem: {
     backgroundColor: '#fff',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
   },
   entryInfo: {
     flex: 1,
   },
   entryProduct: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#333',
   },
   entryDate: {
     fontSize: 12,
-    color: '#666',
+    color: '#888',
     marginTop: 4,
   },
   entryDetails: {
     marginTop: 8,
-    // flexDirection: 'row',
+    flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  entryDetailText: {
+    fontSize: 14,
+    color: '#555',
   },
   entryActions: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  actionIcon: {
-    marginRight: 15,
+  editButton: {
+    backgroundColor: '#6a11cb',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  addButton: {
-    backgroundColor: '#1a237e',
-    borderRadius: 8,
-    padding: 16,
-    margin: 16,
+  deleteButton: {
+    backgroundColor: '#F44336',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
     alignItems: 'center',
   },
+  addButton: {
+    backgroundColor: '#6a11cb',
+    borderRadius: 12,
+    padding: 16,
+    margin: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#6a11cb',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
   addButtonText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
+    marginRight: 10,
   },
   formContainer: {
     padding: 16,
   },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
   input: {
+    backgroundColor: '#f9f9f9',
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
+    borderRadius: 12,
+    padding: 16,
     fontSize: 16,
+    color: '#333',
   },
   submitButton: {
-    backgroundColor: '#1a237e',
-    borderRadius: 8,
+    backgroundColor: '#6a11cb',
+    borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     marginTop: 16,
+    shadowColor: '#6a11cb',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
   },
   submitButtonText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 });
 
