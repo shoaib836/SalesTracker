@@ -15,14 +15,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import firestore from '@react-native-firebase/firestore';
 
 const CompanyFinances = () => {
+  const assetsRef = firestore().collection('companyAssets');
+  const balanceRef = firestore().collection('company').doc('balance');
   const navigation = useNavigation();
   const [assets, setAssets] = useState([]);
   const [showAssetsModal, setShowAssetsModal] = useState(false);
   const [showAddAssetModal, setShowAddAssetModal] = useState(false);
   const [newAssetName, setNewAssetName] = useState('');
   const [newAssetAmount, setNewAssetAmount] = useState('');
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentBalance, setCurrentBalance] = useState(0);
   const [totalAssets, setTotalAssets] = useState(0);
@@ -53,48 +57,59 @@ const CompanyFinances = () => {
   }, []);
 
   // Load data from storage
+  // Load data from Firestore
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        // Load assets
-        const storedAssets = await AsyncStorage.getItem('@company_assets');
-        if (storedAssets !== null) {
-          const parsedAssets = JSON.parse(storedAssets);
-          setAssets(parsedAssets);
-          setTotalAssets(
-            parsedAssets.reduce((sum, asset) => sum + asset.amount, 0),
-          );
-        } else {
-          const defaultAssets = [];
-          setAssets(defaultAssets);
-          setTotalAssets(0);
-          await AsyncStorage.setItem(
-            '@company_assets',
-            JSON.stringify(defaultAssets),
-          );
-        }
-
-        // Load current balance
-        const balanceData = await AsyncStorage.getItem('@current_balance');
-        if (balanceData !== null) {
-          setCurrentBalance(parseFloat(balanceData));
-        } else {
-          // Initialize with default balance if not exists
-          const initialBalance = 0;
-          setCurrentBalance(initialBalance);
-          await AsyncStorage.setItem(
-            '@current_balance',
-            initialBalance.toString(),
-          );
-        }
-      } catch (error) {
-        console.error('Failed to load data', error);
-      } finally {
-        setIsLoading(false);
+    // Initialize balance if it doesn't exist
+    const initializeBalance = async () => {
+      const doc = await balanceRef.get();
+      if (!doc.exists) {
+        await balanceRef.set({ amount: 0 });
       }
     };
+  
+    // Load balance
+    const balanceUnsub = balanceRef.onSnapshot(doc => {
+      if (doc.exists) {
+        setCurrentBalance(doc.data().amount || 0);
+      }
+    });
+  
+    // Load assets
+    const assetsUnsub = assetsRef
+      .orderBy('createdAt', 'desc')
+      .onSnapshot(querySnapshot => {
+        const assetsData = [];
+        let total = 0;
+  
+        querySnapshot.forEach(doc => {
+          const asset = {
+            id: doc.id,
+            ...doc.data(),
+          };
+          assetsData.push(asset);
+          total += asset.amount;
+        });
+  
+        setAssets(assetsData);
+        setTotalAssets(total);
+        setIsLoading(false);
+      });
+  
+    initializeBalance(); // Call the initialization
+  
+    return () => {
+      balanceUnsub();
+      assetsUnsub();
+    };
+  }, []);
 
-    loadData();
+  useEffect(() => {
+    const unsubscribe = balanceRef.onSnapshot((doc) => {
+      if (doc.exists) {
+        setCurrentBalance(doc.data().amount || 0);
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   // const resetCompanyBalance = async () => {
@@ -112,28 +127,35 @@ const CompanyFinances = () => {
 
   // resetCompanyBalance();
 
+  const handleAddBalance = async () => {
+    if (!balanceToAdd || isNaN(balanceToAdd)) return;
+  
+    const amount = parseFloat(balanceToAdd);
+    if (amount <= 0) return;
+  
+    try {
+      await balanceRef.update({
+        amount: firestore.FieldValue.increment(amount)
+      });
+  
+      setBalanceToAdd('');
+      setShowAddBalanceModal(false);
+      setShowBalanceModal(false);
+      
+      setSuccessMessage('Balance updated successfully');
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('Error adding to balance:', error);
+      setErrorMessage('Failed to update balance');
+      setShowErrorModal(true);
+    }
+  };
+
   const confirmDeleteAsset = id => {
     setAssetToDelete(id);
   };
 
   const cancelDeleteAsset = () => {
-    setAssetToDelete(null);
-  };
-
-  const executeDeleteAsset = async () => {
-    if (!assetToDelete) return;
-
-    const assetToRemove = assets.find(asset => asset.id === assetToDelete);
-    if (!assetToRemove) return;
-
-    const updatedAssets = assets.filter(asset => asset.id !== assetToDelete);
-    setAssets(updatedAssets);
-    setTotalAssets(prevTotal => prevTotal - assetToRemove.amount);
-    await AsyncStorage.setItem(
-      '@company_assets',
-      JSON.stringify(updatedAssets),
-    );
-
     setAssetToDelete(null);
   };
 
@@ -145,33 +167,75 @@ const CompanyFinances = () => {
     const amountValue = parseFloat(newAssetAmount);
     if (amountValue <= 0) return;
 
-    if (amountValue > currentBalance) {
-      setShowInsufficientBalanceModal(true);
-      return;
+    try {
+      // Check balance first
+      const balanceDoc = await balanceRef.get();
+      const currentBalance = balanceDoc.exists ? balanceDoc.data().amount : 0;
+
+      if (amountValue > currentBalance) {
+        setShowInsufficientBalanceModal(true);
+        return;
+      }
+
+      // Run transaction to update balance and add asset
+      await firestore().runTransaction(async transaction => {
+        // Update balance
+        transaction.update(balanceRef, {
+          amount: firestore.FieldValue.increment(-amountValue),
+        });
+
+        // Add new asset
+        const newAsset = {
+          name: newAssetName,
+          amount: amountValue,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        };
+        transaction.set(assetsRef.doc(), newAsset);
+      });
+
+      // Reset form
+      setNewAssetName('');
+      setNewAssetAmount('');
+      setShowAddAssetModal(false);
+
+      setSuccessMessage('Asset added successfully');
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('Error adding asset:', error);
+      setErrorMessage('Failed to add asset');
+      setShowErrorModal(true);
     }
+  };
 
-    const newAsset = {
-      id: Date.now(),
-      name: newAssetName,
-      amount: amountValue,
-    };
+  const executeDeleteAsset = async () => {
+    if (!assetToDelete) return;
 
-    const updatedAssets = [...assets, newAsset];
-    setAssets(updatedAssets);
-    setTotalAssets(prevTotal => prevTotal + amountValue);
+    try {
+      const assetDoc = await assetsRef.doc(assetToDelete).get();
+      if (!assetDoc.exists) return;
 
-    const newBalance = currentBalance - amountValue;
-    setCurrentBalance(newBalance);
+      const assetAmount = assetDoc.data().amount;
 
-    await AsyncStorage.setItem(
-      '@company_assets',
-      JSON.stringify(updatedAssets),
-    );
-    await AsyncStorage.setItem('@current_balance', newBalance.toString());
+      // Run transaction to update balance and delete asset
+      await firestore().runTransaction(async transaction => {
+        // Update balance
+        transaction.update(balanceRef, {
+          amount: firestore.FieldValue.increment(assetAmount),
+        });
 
-    setNewAssetName('');
-    setNewAssetAmount('');
-    setShowAddAssetModal(false);
+        // Delete asset
+        transaction.delete(assetsRef.doc(assetToDelete));
+      });
+
+      setAssetToDelete(null);
+
+      setSuccessMessage('Asset deleted successfully');
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('Error deleting asset:', error);
+      setErrorMessage('Failed to delete asset');
+      setShowErrorModal(true);
+    }
   };
 
   if (isLoading) {
@@ -463,78 +527,64 @@ const CompanyFinances = () => {
       </Modal>
 
       {/* Add Balance Modal */}
-      <Modal
-        visible={showAddBalanceModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowAddBalanceModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                onPress={() => setShowAddBalanceModal(false)}
-                style={styles.modalCloseButton}
-              >
-                <Icon name="close" size={24} color="#fff" />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Add to Balance</Text>
-              <View style={{ width: 24 }} />
-            </View>
+      {/* Add Balance Modal */}
+<Modal
+  visible={showAddBalanceModal}
+  transparent={true}
+  animationType="slide"
+  onRequestClose={() => setShowAddBalanceModal(false)}
+>
+  <View style={styles.modalOverlay}>
+    <View style={styles.modalContainer}>
+      <View style={styles.modalHeader}>
+        <TouchableOpacity
+          onPress={() => setShowAddBalanceModal(false)}
+          style={styles.modalCloseButton}
+        >
+          <Icon name="close" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.modalTitle}>Add to Balance</Text>
+        <View style={{ width: 24 }} />
+      </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Amount (Rs.)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter amount to add"
-                placeholderTextColor="#888"
-                keyboardType="numeric"
-                value={balanceToAdd}
-                onChangeText={setBalanceToAdd}
-              />
-            </View>
+      <View style={styles.inputContainer}>
+        <Text style={styles.inputLabel}>Amount (Rs.)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Enter amount to add"
+          placeholderTextColor="#888"
+          keyboardType="numeric"
+          value={balanceToAdd}
+          onChangeText={setBalanceToAdd}
+        />
+      </View>
 
-            <View style={styles.buttonRow}>
-              <Pressable
-                style={[styles.button, styles.cancelButton]}
-                onPress={() => {
-                  setBalanceToAdd('');
-                  setShowAddBalanceModal(false);
-                }}
-                android_ripple={{ color: '#ccc' }}
-              >
-                <Text style={[styles.buttonText, { color: '#333' }]}>
-                  Cancel
-                </Text>
-              </Pressable>
+      <View style={styles.buttonRow}>
+        <Pressable
+          style={[styles.button, styles.cancelButton]}
+          onPress={() => {
+            setBalanceToAdd('');
+            setShowAddBalanceModal(false);
+          }}
+          android_ripple={{ color: '#ccc' }}
+        >
+          <Text style={[styles.buttonText, { color: '#333' }]}>
+            Cancel
+          </Text>
+        </Pressable>
 
-              <Pressable
-                style={[styles.button, styles.addButton]}
-                onPress={async () => {
-                  if (!balanceToAdd || isNaN(balanceToAdd)) {
-                    return;
-                  }
-                  const amount = parseFloat(balanceToAdd);
-                  if (amount <= 0) return;
-
-                  const newBalance = currentBalance + amount;
-                  setCurrentBalance(newBalance);
-                  await AsyncStorage.setItem(
-                    '@current_balance',
-                    newBalance.toString(),
-                  );
-                  setBalanceToAdd('');
-                  setShowAddBalanceModal(false);
-                  setShowBalanceModal(false);
-                }}
-                android_ripple={{ color: '#4a00e0' }}
-              >
-                <Text style={styles.buttonText}>Add Funds</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        {/* Updated Pressable with handleAddBalance */}
+        <Pressable
+          style={[styles.button, styles.addButton]}
+          onPress={handleAddBalance}
+          android_ripple={{ color: '#4a00e0' }}
+        >
+          <Text style={styles.buttonText}>Add Funds</Text>
+        </Pressable>
+      </View>
+    </View>
+  </View>
+</Modal>
 
       {/* Balance Action Modal */}
       <Modal

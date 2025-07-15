@@ -14,9 +14,13 @@ import {
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation } from '@react-navigation/native';
+import firestore from '@react-native-firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AccountsDetail = () => {
+
+  const accountsRef = firestore().collection('accounts');
+const userRef = firestore().collection('users').doc('current_user'); // You'll need authentication for multi-user
   const navigation = useNavigation();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -94,24 +98,24 @@ const AccountsDetail = () => {
 
   const loadAllAccountsData = async () => {
     try {
-      const storedAccounts = await AsyncStorage.getItem('@all_accounts');
-      if (storedAccounts) {
-        let parsedAccounts = JSON.parse(storedAccounts);
-
+      const snapshot = await accountsRef.get();
+      if (snapshot.empty) {
+        // Initialize with default data if no data exists
+        await initializeDefaultData();
+      } else {
+        let parsedAccounts = snapshot.docs.map(doc => ({
+          id: doc().id,
+          ...doc().data(),
+          months: doc().data().months || []
+        }));
+        
         // Add current month to each account if it doesn't exist
         parsedAccounts = parsedAccounts.map(account => ({
           ...account,
-          months: addCurrentMonthIfNeeded(account),
+          months: addCurrentMonthIfNeeded(account)
         }));
-
+  
         setAccounts(parsedAccounts);
-        await AsyncStorage.setItem(
-          '@all_accounts',
-          JSON.stringify(parsedAccounts),
-        );
-      } else {
-        // Initialize with default data if no data exists
-        await initializeDefaultData();
       }
     } catch (error) {
       console.error('Failed to load accounts', error);
@@ -208,93 +212,108 @@ const AccountsDetail = () => {
       setShowErrorModal(true);
       return;
     }
-
+  
     const currentMonthYear = getCurrentMonthYear();
-    const account = {
-      id: Date.now().toString(),
+    const accountData = {
       name: newAccount.name,
       description: newAccount.description,
       color: newAccount.color,
-      months: [
-        {
+      months: {
+        [Date.now().toString()]: {
           id: Date.now().toString(),
           name: currentMonthYear,
-          orders: 0,
-          income: 0,
-          cost: 0,
+          orders: 0, 
+          income: 0, 
+          cost: 0, 
           profit: 0,
-        },
-      ],
+          entries: []
+        }
+      }
     };
-
-    const updatedAccounts = [...accounts, account];
-    setAccounts(updatedAccounts);
-
+  
     try {
-      await AsyncStorage.setItem(
-        '@all_accounts',
-        JSON.stringify(updatedAccounts),
-      );
+      // Add new account to Firestore
+      const docRef = await accountsRef.add(accountData);
+      
+      // Update local state with the new account (including the Firestore-generated ID)
+      setAccounts([...accounts, {
+        id: docRef.id,
+        ...accountData,
+        months: Object.values(accountData.months)
+      }]);
+      
+      setNewAccount({
+        name: '',
+        description: '',
+        color: '#6a11cb',
+      });
+      setShowAddAccountModal(false);
     } catch (error) {
-      console.error('Failed to save new account', error);
+      console.error('Failed to add new account', error);
+      setErrorMessage('Failed to add account. Please try again.');
+      setShowErrorModal(true);
     }
-
-    setNewAccount({
-      name: '',
-      description: '',
-      color: '#6a11cb',
-    });
-    setShowAddAccountModal(false);
   };
+
+  useEffect(() => {
+    const subscriber = accountsRef.onSnapshot(querySnapshot => {
+      const accountsData = [];
+      querySnapshot.forEach(doc => {
+        accountsData.push({
+          id: doc().id,
+          ...doc().data(),
+          months: Object.values(doc().data().months || {})
+        });
+      });
+      setAccounts(accountsData);
+    });
+  
+    // Unsubscribe from updates when component unmounts
+    return () => subscriber();
+  }, []);
 
   const saveEntries = async () => {
     if (!selectedAccount || !selectedMonth) return;
-
+  
     try {
-      await AsyncStorage.setItem(
-        `@entries_${selectedAccount.id}_${selectedMonth.id}`,
-        JSON.stringify(entries),
+      // Calculate values first
+      const income = entries.reduce(
+        (sum, entry) => sum + parseFloat(entry.amountReceived || 0),
+        0
       );
-
-      // Update month summary
-      const updatedAccounts = accounts.map(account => {
-        if (account.id === selectedAccount.id) {
-          const updatedMonths = account.months.map(m => {
-            if (m.id === selectedMonth.id) {
-              const income = entries.reduce(
-                (sum, entry) => sum + parseFloat(entry.amountReceived || 0),
-                0,
-              );
-              const cost = entries.reduce(
-                (sum, entry) =>
-                  sum +
-                  (parseFloat(entry.productionCost || 0) +
-                    parseFloat(entry.deliveryCost || 0)),
-                0,
-              );
-              return {
-                ...m,
-                orders: entries.length,
-                income,
-                cost,
-                profit: income - cost,
-              };
-            }
-            return m;
-          });
-
-          return { ...account, months: updatedMonths };
+      
+      const cost = entries.reduce(
+        (sum, entry) => sum + (parseFloat(entry.productionCost || 0) + 
+        parseFloat(entry.deliveryCost || 0)),
+        0
+      );
+      
+      const profit = income - cost;
+  
+      // Create the update object
+      const updateData = {
+        [`months.${selectedMonth.id}`]: {
+          entries: entries,
+          orders: entries.length,
+          income: income,
+          cost: cost,
+          profit: profit,
+          // Preserve other existing month data
+          ...selectedMonth,
+          id: selectedMonth.id,
+          name: selectedMonth.name
         }
-        return account;
-      });
-
-      setAccounts(updatedAccounts);
-      await AsyncStorage.setItem(
-        '@all_accounts',
-        JSON.stringify(updatedAccounts),
-      );
+      };
+  
+      // Update the document
+      await accountsRef.doc(selectedAccount.id).update(updateData);
+  
+      // Refresh the data
+      loadAllAccountsData();
     } catch (error) {
       console.error('Failed to save entries', error);
+      setErrorMessage('Failed to save entries. Please try again.');
+      setShowErrorModal(true);
     }
   };
 

@@ -15,8 +15,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import firestore from '@react-native-firebase/firestore';
 
 const Expenditures = () => {
+  const expendituresRef = firestore().collection('expenditures');
+  const balanceRef = firestore().collection('company').doc('balance');
   const navigation = useNavigation();
   const [months, setMonths] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,117 +56,72 @@ const Expenditures = () => {
     ]).start();
   }, []);
 
-  // Function to get current month and year
+  const addNewMonth = async (monthName) => {
+    try {
+      await expendituresRef.add({
+        name: monthName,
+        total: 0,
+        createdAt: firestore.FieldValue.serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Error adding new month:', error);
+    }
+  };
+  
+  // Replace your getCurrentMonthYear and monthExists functions with these:
   const getCurrentMonthYear = () => {
     const currentDate = new Date();
-    const monthName = currentDate.toLocaleString('default', { month: 'long' });
-    const year = currentDate.getFullYear();
-    return `${monthName} ${year}`;
-  };
-
-  // Function to check if month exists
-  const monthExists = (monthList, monthYear) => {
-    return monthList.some(month => month.name === monthYear);
+    return currentDate.toLocaleString('default', { month: 'long' }) + ' ' + currentDate.getFullYear();
   };
 
   // Load months from storage
   useEffect(() => {
-    const loadMonths = async () => {
-      try {
-        const storedMonths = await AsyncStorage.getItem(
-          '@monthly_expenditures',
-        );
-        if (storedMonths !== null) {
-          const parsedMonths = JSON.parse(storedMonths);
-          const currentMonthYear = getCurrentMonthYear();
-
-          // Add current month if it doesn't exist
-          if (!monthExists(parsedMonths, currentMonthYear)) {
-            const newMonth = {
-              id: Date.now().toString(),
-              name: currentMonthYear,
-              total: 0,
-            };
-            const updatedMonths = [newMonth, ...parsedMonths];
-            setMonths(updatedMonths);
-            await AsyncStorage.setItem(
-              '@monthly_expenditures',
-              JSON.stringify(updatedMonths),
-            );
-          } else {
-            setMonths(parsedMonths);
-          }
+    const subscriber = expendituresRef
+      .orderBy('name', 'desc')
+      .onSnapshot(querySnapshot => {
+        const monthsData = [];
+        querySnapshot.forEach(doc => {
+          monthsData.push({
+            id: doc.id,
+            ...doc.data()
+          });
+        });
+  
+        // Check if current month exists
+        const currentMonthYear = getCurrentMonthYear();
+        if (!monthsData.some(m => m.name === currentMonthYear)) {
+          addNewMonth(currentMonthYear);
         } else {
-          // Initialize with default months if no data exists
-          const defaultMonths = [
-            { id: '1', name: 'June 2025', total: 0 },
-            { id: '2', name: 'May 2025', total: 0 },
-            { id: '3', name: 'April 2025', total: 0 },
-            { id: '4', name: 'March 2025', total: 0 },
-          ];
-          setMonths(defaultMonths);
-          await AsyncStorage.setItem(
-            '@monthly_expenditures',
-            JSON.stringify(defaultMonths),
-          );
+          setMonths(monthsData);
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error('Failed to load months', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadMonths();
-
-    // Set up monthly check for new month
-    const interval = setInterval(() => {
-      const now = new Date();
-      if (now.getDate() === 1) {
-        const checkNewMonth = async () => {
-          const currentMonthYear = getCurrentMonthYear();
-          const storedMonths = await AsyncStorage.getItem(
-            '@monthly_expenditures',
-          );
-          if (storedMonths) {
-            const parsedMonths = JSON.parse(storedMonths);
-            if (!monthExists(parsedMonths, currentMonthYear)) {
-              const newMonth = {
-                id: Date.now().toString(),
-                name: currentMonthYear,
-                total: 0,
-              };
-              const updatedMonths = [newMonth, ...parsedMonths];
-              setMonths(updatedMonths);
-              await AsyncStorage.setItem(
-                '@monthly_expenditures',
-                JSON.stringify(updatedMonths),
-              );
-            }
-          }
-        };
-        checkNewMonth();
-      }
-    }, 86400000); // Check once per day
-
-    return () => clearInterval(interval);
+      });
+  
+    return () => subscriber(); // Unsubscribe on unmount
   }, []);
 
   // Load expenditures when a month is selected
-  const handleMonthPress = async month => {
+  const handleMonthPress = async (month) => {
     setSelectedMonth(month);
     try {
-      const storedExpenditures = await AsyncStorage.getItem(
-        `@expenditures_${month.id}`,
-      );
-      if (storedExpenditures !== null) {
-        setExpenditures(JSON.parse(storedExpenditures));
-      } else {
-        setExpenditures([]);
-      }
+      const expendituresSnapshot = await expendituresRef
+        .doc(month.id)
+        .collection('transactions')
+        .orderBy('date', 'desc')
+        .get();
+      
+      const expendituresData = [];
+      expendituresSnapshot.forEach(doc => {
+        expendituresData.push({
+          id: doc.id,
+          ...doc.data()
+        });
+      });
+      
+      setExpenditures(expendituresData);
       setShowExpenditureModal(true);
     } catch (error) {
-      console.error('Failed to load expenditures', error);
+      console.error('Failed to load expenditures:', error);
       setExpenditures([]);
       setShowExpenditureModal(true);
     }
@@ -199,26 +157,23 @@ const Expenditures = () => {
   }, [expenditures]);
 
   // Deduct from balance
-  const deductFromBalance = async amount => {
+  const deductFromBalance = async (amount) => {
     try {
-      const balanceData = await AsyncStorage.getItem('@current_balance');
-      let currentBalance = balanceData ? parseFloat(balanceData) : 800000;
-      currentBalance -= amount;
-      await AsyncStorage.setItem('@current_balance', currentBalance.toString());
+      await firestore().runTransaction(async (transaction) => {
+        const balanceDoc = await transaction.get(balanceRef);
+        const currentBalance = balanceDoc.exists ? balanceDoc.data().amount : 800000;
+        transaction.update(balanceRef, { amount: currentBalance - amount });
+      });
       return true;
     } catch (error) {
-      console.error('Failed to update balance', error);
+      console.error('Failed to update balance:', error);
       return false;
     }
   };
 
   // Add new expenditure
   const addExpenditure = async () => {
-    if (
-      !newExpenditure.description ||
-      !newExpenditure.amount ||
-      isNaN(newExpenditure.amount)
-    ) {
+    if (!newExpenditure.description || !newExpenditure.amount || isNaN(newExpenditure.amount)) {
       setErrorMessage('Please enter valid description and amount');
       setShowErrorModal(true);
       return;
@@ -231,23 +186,45 @@ const Expenditures = () => {
       return;
     }
   
-    // Deduct from balance
-    const success = await deductFromBalance(amount);
-    if (!success) {
-      setErrorMessage('Failed to update balance');
+    try {
+      // Deduct from balance
+      const success = await deductFromBalance(amount);
+      if (!success) {
+        setErrorMessage('Failed to update balance');
+        setShowErrorModal(true);
+        return;
+      }
+  
+      // Add new expenditure
+      const newExp = {
+        description: newExpenditure.description,
+        amount: amount,
+        date: new Date().toISOString(),
+        createdAt: firestore.FieldValue.serverTimestamp()
+      };
+  
+      // Add to Firestore
+      const docRef = await expendituresRef
+        .doc(selectedMonth.id)
+        .collection('transactions')
+        .add(newExp);
+  
+      // Update month total
+      await expendituresRef.doc(selectedMonth.id).update({
+        total: firestore.FieldValue.increment(amount)
+      });
+  
+      // Update local state
+      setExpenditures([...expenditures, { id: docRef.id, ...newExp }]);
+      setNewExpenditure({ description: '', amount: '' });
+      
+      setSuccessMessage('Expenditure added successfully');
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('Error adding expenditure:', error);
+      setErrorMessage('Failed to add expenditure');
       setShowErrorModal(true);
-      return;
     }
-  
-    const newExp = {
-      id: Date.now().toString(),
-      description: newExpenditure.description,
-      amount: amount,
-      date: new Date().toLocaleDateString(),
-    };
-  
-    setExpenditures([...expenditures, newExp]);
-    setNewExpenditure({ description: '', amount: '' });
   };
 
   // Delete expenditure
@@ -259,23 +236,38 @@ const Expenditures = () => {
 
   const deleteExpenditure = async () => {
     if (!expenditureToDelete) return;
-
-    const expToDelete = expenditures.find(
-      exp => exp.id === expenditureToDelete,
-    );
-    if (!expToDelete) return;
-
-    // Add back to balance
-    const success = await deductFromBalance(-expToDelete.amount);
-    if (!success) {
-      setErrorMessage('Failed to update balance');
+  
+    try {
+      const expToDelete = expenditures.find(exp => exp.id === expenditureToDelete);
+      if (!expToDelete) return;
+  
+      // Add back to balance
+      await deductFromBalance(-expToDelete.amount);
+  
+      // Delete from Firestore
+      await expendituresRef
+        .doc(selectedMonth.id)
+        .collection('transactions')
+        .doc(expenditureToDelete)
+        .delete();
+  
+      // Update month total
+      await expendituresRef.doc(selectedMonth.id).update({
+        total: firestore.FieldValue.increment(-expToDelete.amount)
+      });
+  
+      // Update local state
+      setExpenditures(expenditures.filter(exp => exp.id !== expenditureToDelete));
+      setExpenditureToDelete(null);
+      setShowDeleteModal(false);
+      
+      setSuccessMessage('Expenditure deleted successfully');
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('Error deleting expenditure:', error);
+      setErrorMessage('Failed to delete expenditure');
       setShowErrorModal(true);
-      return;
     }
-
-    setExpenditures(expenditures.filter(exp => exp.id !== expenditureToDelete));
-    setExpenditureToDelete(null);
-    setShowDeleteModal(false);
   };
 
   if (isLoading) {

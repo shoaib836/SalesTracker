@@ -14,9 +14,11 @@ import {
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import firestore from '@react-native-firebase/firestore';
 
 const Partners = () => {
+  const partnersRef = firestore().collection('partners');
+  const balanceRef = firestore().collection('company').doc('balance');
   const navigation = useNavigation();
   const [partners, setPartners] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,6 +33,7 @@ const Partners = () => {
   const [drawingToDelete, setDrawingToDelete] = useState(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Animation effects
   useEffect(() => {
@@ -49,96 +52,153 @@ const Partners = () => {
     ]).start();
   }, []);
 
-  // Load partners from storage
+  // Load partners from Firestore
   useEffect(() => {
-    const loadPartners = async () => {
-      try {
-        const storedPartners = await AsyncStorage.getItem('@partners');
-        if (storedPartners !== null) {
-          setPartners(JSON.parse(storedPartners));
-        } else {
-          const defaultPartners = [
-            { id: 1, name: 'Umer Muti', drawings: 0, drawingsList: [] },
-            { id: 2, name: 'Habibullah', drawings: 0, drawingsList: [] },
-            { id: 3, name: 'Shoaib', drawings: 0, drawingsList: [] },
-          ];
-          setPartners(defaultPartners);
-          await AsyncStorage.setItem(
-            '@partners',
-            JSON.stringify(defaultPartners),
-          );
-        }
-      } catch (error) {
-        console.error('Failed to load partners', error);
-      } finally {
+    const subscriber = partnersRef.onSnapshot(querySnapshot => {
+      const partnersData = [];
+      querySnapshot.forEach(doc => {
+        partnersData.push({
+          id: doc.id,
+          ...doc.data(),
+          drawingsList: doc.data().drawingsList || [],
+        });
+      });
+
+      // If no partners exist, initialize with default data
+      if (partnersData.length === 0) {
+        initializeDefaultPartners();
+      } else {
+        setPartners(partnersData);
         setIsLoading(false);
       }
-    };
+    });
 
-    loadPartners();
+    return () => subscriber(); // Unsubscribe on unmount
   }, []);
 
-  // Update company balance
-  const updateCompanyBalance = async amountChange => {
+  const initializeDefaultPartners = async () => {
+    const defaultPartners = [
+      { name: 'Umer Muti', drawings: 0, drawingsList: [] },
+      { name: 'Habibullah', drawings: 0, drawingsList: [] },
+      { name: 'Shoaib', drawings: 0, drawingsList: [] },
+    ];
+  
     try {
-      const currentBalanceData = await AsyncStorage.getItem('@current_balance');
-      let currentBalance = currentBalanceData
-        ? parseFloat(currentBalanceData)
-        : 0;
-      currentBalance -= amountChange;
-      await AsyncStorage.setItem('@current_balance', currentBalance.toString());
+      // Add all default partners in a batch
+      const batch = firestore().batch();
+      
+      defaultPartners.forEach(partner => {
+        const docRef = partnersRef.doc(); // Auto-generated ID
+        batch.set(docRef, partner);
+      });
+  
+      await batch.commit();
     } catch (error) {
-      console.error('Failed to update company balance', error);
+      console.error('Error initializing default partners:', error);
+    }
+  };
+
+  // Update company balance
+  const updateCompanyBalance = async (amountChange) => {
+    try {
+      await firestore().runTransaction(async (transaction) => {
+        const balanceDoc = await transaction.get(balanceRef);
+        
+        // Initialize balance if it doesn't exist
+        if (!balanceDoc.exists) {
+          transaction.set(balanceRef, { amount: 0 });
+        }
+        
+        const currentBalance = balanceDoc.exists ? balanceDoc.data().amount : 0;
+        
+        // Validate balance for withdrawals
+        if (amountChange > 0 && currentBalance < amountChange) {
+          throw new Error('Insufficient balance');
+        }
+        
+        transaction.update(balanceRef, { 
+          amount: currentBalance - amountChange 
+        });
+      });
+      return true;
+    } catch (error) {
+      console.error('Failed to update company balance:', error);
+      setErrorMessage(error.message || 'Failed to update balance');
+      setShowErrorModal(true);
+      return false;
     }
   };
 
   // Handle partner press
-  const handlePartnerPress = async partner => {
+  const handlePartnerPress = partner => {
     setSelectedPartner(partner);
-    try {
-      setDrawings(partner.drawingsList || []);
-      setShowDrawingModal(true);
-    } catch (error) {
-      console.error('Failed to load drawings', error);
-      setDrawings([]);
-      setShowDrawingModal(true);
-    }
+    setDrawings(partner.drawingsList || []);
+    setShowDrawingModal(true);
   };
 
   // Add new drawing
   const addDrawing = async () => {
     if (!newDrawing.title || !newDrawing.amount || isNaN(newDrawing.amount)) {
+      setErrorMessage('Please enter valid description and amount');
+      setShowErrorModal(true);
       return;
     }
-
+  
     const amountValue = parseFloat(newDrawing.amount);
-    if (amountValue <= 0) return;
-
-    const newDrawingEntry = {
-      id: Date.now().toString(),
-      title: newDrawing.title,
-      amount: amountValue,
-      date: new Date().toLocaleDateString(),
-    };
-
-    const updatedDrawings = [...drawings, newDrawingEntry];
-    setDrawings(updatedDrawings);
-
-    const updatedPartners = partners.map(p => {
-      if (p.id === selectedPartner.id) {
-        return {
-          ...p,
-          drawings: p.drawings + amountValue,
-          drawingsList: updatedDrawings,
+    if (amountValue <= 0) {
+      setErrorMessage('Amount must be positive');
+      setShowErrorModal(true);
+      return;
+    }
+  
+    try {
+      setIsProcessing(true);
+      await firestore().runTransaction(async (transaction) => {
+        // 1. Check/initialize balance
+        const balanceDoc = await transaction.get(balanceRef);
+        if (!balanceDoc.exists) {
+          transaction.set(balanceRef, { amount: 0 });
+        }
+        
+        const currentBalance = balanceDoc.exists ? balanceDoc.data().amount : 0;
+        
+        if (amountValue > currentBalance) {
+          throw new Error('Insufficient company balance');
+        }
+  
+        // 2. Update partner
+        const partnerRef = partnersRef.doc(selectedPartner.id);
+        const newDrawingEntry = {
+          id: Date.now().toString(),
+          title: newDrawing.title,
+          amount: amountValue,
+          date: new Date().toISOString(),
         };
-      }
-      return p;
-    });
-
-    setPartners(updatedPartners);
-    await AsyncStorage.setItem('@partners', JSON.stringify(updatedPartners));
-    await updateCompanyBalance(amountValue);
-    setNewDrawing({ title: '', amount: '' });
+  
+        transaction.update(partnerRef, {
+          drawings: firestore.FieldValue.increment(amountValue),
+          drawingsList: firestore.FieldValue.arrayUnion(newDrawingEntry)
+        });
+  
+        // 3. Update balance
+        transaction.update(balanceRef, {
+          amount: firestore.FieldValue.increment(-amountValue)
+        });
+      });
+  
+      setNewDrawing({ title: '', amount: '' });
+      setSuccessMessage('Drawing added successfully');
+      setShowSuccessModal(true);
+      
+    } catch (error) {
+      console.error('Error adding drawing:', error);
+      setErrorMessage(error.message.includes('Insufficient') 
+        ? error.message 
+        : 'Failed to add drawing');
+      setShowErrorModal(true);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Delete drawing
@@ -154,30 +214,25 @@ const Partners = () => {
 
   const deleteDrawing = async () => {
     if (!drawingToDelete) return;
-
+  
     const drawingToRemove = drawings.find(d => d.id === drawingToDelete);
     if (!drawingToRemove) return;
-
-    const updatedDrawings = drawings.filter(d => d.id !== drawingToDelete);
-    setDrawings(updatedDrawings);
-
-    const updatedPartners = partners.map(p => {
-      if (p.id === selectedPartner.id) {
-        return {
-          ...p,
-          drawings: p.drawings - drawingToRemove.amount,
-          drawingsList: updatedDrawings,
-        };
-      }
-      return p;
-    });
-
-    setPartners(updatedPartners);
-    await AsyncStorage.setItem('@partners', JSON.stringify(updatedPartners));
-    await updateCompanyBalance(-drawingToRemove.amount);
-
-    setShowDeleteModal(false);
-    setDrawingToDelete(null);
+  
+    try {
+      // Update the partner document
+      await partnersRef.doc(selectedPartner.id).update({
+        drawings: firestore.FieldValue.increment(-drawingToRemove.amount),
+        drawingsList: firestore.FieldValue.arrayRemove(drawingToRemove)
+      });
+  
+      // Update company balance (adding back the amount)
+      await updateCompanyBalance(-drawingToRemove.amount);
+  
+      setShowDeleteModal(false);
+      setDrawingToDelete(null);
+    } catch (error) {
+      console.error('Error deleting drawing:', error);
+    }
   };
 
   if (isLoading) {
