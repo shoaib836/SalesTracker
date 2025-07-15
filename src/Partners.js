@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
-  Alert,
 } from 'react-native';
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -85,7 +84,7 @@ const Partners = () => {
       const currentBalanceData = await AsyncStorage.getItem('@current_balance');
       let currentBalance = currentBalanceData
         ? parseFloat(currentBalanceData)
-        : 800000;
+        : 0;
       currentBalance -= amountChange;
       await AsyncStorage.setItem('@current_balance', currentBalance.toString());
     } catch (error) {

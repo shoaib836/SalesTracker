@@ -10,7 +10,6 @@ import {
   Pressable,
   Animated,
   Easing,
-  Alert,
 } from 'react-native';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigation } from '@react-navigation/native';
@@ -30,6 +29,12 @@ const Expenditures = () => {
   });
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [expenditureToDelete, setExpenditureToDelete] = useState(null);
 
   // Animation effects
   useEffect(() => {
@@ -214,47 +219,63 @@ const Expenditures = () => {
       !newExpenditure.amount ||
       isNaN(newExpenditure.amount)
     ) {
-      Alert.alert('Error', 'Please enter valid description and amount');
+      setErrorMessage('Please enter valid description and amount');
+      setShowErrorModal(true);
       return;
     }
-
+  
     const amount = parseFloat(newExpenditure.amount);
     if (amount <= 0) {
-      Alert.alert('Error', 'Amount must be positive');
+      setErrorMessage('Amount must be positive');
+      setShowErrorModal(true);
       return;
     }
-
+  
     // Deduct from balance
     const success = await deductFromBalance(amount);
     if (!success) {
-      Alert.alert('Error', 'Failed to update balance');
+      setErrorMessage('Failed to update balance');
+      setShowErrorModal(true);
       return;
     }
-
+  
     const newExp = {
       id: Date.now().toString(),
       description: newExpenditure.description,
       amount: amount,
       date: new Date().toLocaleDateString(),
     };
-
+  
     setExpenditures([...expenditures, newExp]);
     setNewExpenditure({ description: '', amount: '' });
   };
 
   // Delete expenditure
-  const deleteExpenditure = async id => {
-    const expenditureToDelete = expenditures.find(exp => exp.id === id);
+  // Replace direct delete calls with confirmation modal:
+  const confirmDeleteExpenditure = id => {
+    setExpenditureToDelete(id);
+    setShowDeleteModal(true);
+  };
+
+  const deleteExpenditure = async () => {
     if (!expenditureToDelete) return;
 
+    const expToDelete = expenditures.find(
+      exp => exp.id === expenditureToDelete,
+    );
+    if (!expToDelete) return;
+
     // Add back to balance
-    const success = await deductFromBalance(-expenditureToDelete.amount);
+    const success = await deductFromBalance(-expToDelete.amount);
     if (!success) {
-      Alert.alert('Error', 'Failed to update balance');
+      setErrorMessage('Failed to update balance');
+      setShowErrorModal(true);
       return;
     }
 
-    setExpenditures(expenditures.filter(exp => exp.id !== id));
+    setExpenditures(expenditures.filter(exp => exp.id !== expenditureToDelete));
+    setExpenditureToDelete(null);
+    setShowDeleteModal(false);
   };
 
   if (isLoading) {
@@ -357,7 +378,7 @@ const Expenditures = () => {
                       Rs. {(Number(item.amount) || 0).toLocaleString()}
                     </Text>
                     <TouchableOpacity
-                      onPress={() => deleteExpenditure(item.id)}
+                      onPress={() => confirmDeleteExpenditure(item.id)}
                       style={styles.deleteButton}
                     >
                       <Icon name="delete" size={20} color="#fff" />
@@ -404,6 +425,92 @@ const Expenditures = () => {
             >
               <Text style={styles.addButtonText}>Add Expenditure</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={showErrorModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowErrorModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModal}>
+            <View style={styles.modalHeader}>
+              <Icon name="error" size={32} color="#d32f2f" />
+              <Text style={styles.modalTitle}>Error</Text>
+            </View>
+            <Text style={styles.modalText}>{errorMessage}</Text>
+            <Pressable
+              style={[styles.modalButton, styles.okButton]}
+              onPress={() => setShowErrorModal(false)}
+              android_ripple={{ color: '#6a11cb' }}
+            >
+              <Text style={styles.modalButtonText}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Success Modal */}
+      <Modal
+        visible={showSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSuccessModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModal}>
+            <View style={styles.modalHeader}>
+              <Icon name="check-circle" size={32} color="#4CAF50" />
+              <Text style={styles.modalTitle}>Success</Text>
+            </View>
+            <Text style={styles.modalText}>{successMessage}</Text>
+            <Pressable
+              style={[styles.modalButton, styles.okButton]}
+              onPress={() => setShowSuccessModal(false)}
+              android_ripple={{ color: '#6a11cb' }}
+            >
+              <Text style={styles.modalButtonText}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={showDeleteModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModal}>
+            <View style={styles.modalHeader}>
+              <Icon name="warning" size={32} color="#FFA000" />
+              <Text style={styles.modalTitle}>Confirm Delete</Text>
+            </View>
+            <Text style={styles.modalText}>
+              Are you sure you want to delete this expenditure?
+            </Text>
+            <View style={styles.modalButtonRow}>
+              <Pressable
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowDeleteModal(false)}
+                android_ripple={{ color: '#e0e0e0' }}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, styles.deleteButton]}
+                onPress={deleteExpenditure}
+                android_ripple={{ color: '#d32f2f' }}
+              >
+                <Text style={[styles.modalButtonText, { color: '#fff' }]}>
+                  Delete
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
@@ -630,6 +737,53 @@ const styles = StyleSheet.create({
   },
   addButtonText: {
     color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  confirmModal: {
+    backgroundColor: '#fff',
+    width: '90%',
+    borderRadius: 16,
+    padding: 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginLeft: 12,
+  },
+  modalText: {
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  modalButton: {
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  okButton: {
+    backgroundColor: '#6a11cb',
+  },
+  cancelButton: {
+    backgroundColor: '#f5f5f5',
+  },
+  modalButtonText: {
     fontSize: 16,
     fontWeight: '600',
   },

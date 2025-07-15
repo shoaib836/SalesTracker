@@ -80,7 +80,7 @@ const CompanyFinances = () => {
           setCurrentBalance(parseFloat(balanceData));
         } else {
           // Initialize with default balance if not exists
-          const initialBalance = 800000;
+          const initialBalance = 0;
           setCurrentBalance(initialBalance);
           await AsyncStorage.setItem(
             '@current_balance',
@@ -96,6 +96,21 @@ const CompanyFinances = () => {
 
     loadData();
   }, []);
+
+  // const resetCompanyBalance = async () => {
+  //   try {
+  //     const initialBalance = 0; // Or whatever default value you want
+  //     await AsyncStorage.setItem(
+  //       '@current_balance',
+  //       initialBalance.toString()
+  //     );
+  //   } catch (error) {
+  //     console.error('Failed to reset balance', error);
+  //     Alert.alert('Error', 'Failed to reset company balance');
+  //   }
+  // };
+
+  // resetCompanyBalance();
 
   const confirmDeleteAsset = id => {
     setAssetToDelete(id);
@@ -394,14 +409,14 @@ const CompanyFinances = () => {
                 android_ripple={{ color: '#ccc' }}
               >
                 <Text
-                  style={{ fontSize: 16, fontWeight: '600', color: '#fff' }}
+                  style={{ fontSize: 16, fontWeight: '600', color: '#888' }}
                 >
                   Cancel
                 </Text>
               </Pressable>
 
               <Pressable
-                style={[styles.button, styles.deleteButton]}
+                style={[styles.button, styles.deleteConfirm]}
                 onPress={executeDeleteAsset}
                 android_ripple={{ color: '#b71c1c' }}
               >
@@ -431,7 +446,13 @@ const CompanyFinances = () => {
             </Text>
 
             <Pressable
-              style={[styles.button, styles.cancelButton]}
+              style={{
+                paddingHorizontal: 20,
+                paddingVertical: 5,
+                borderRadius: 5,
+                borderWidth: 1,
+                borderColor: '#888',
+              }}
               onPress={() => setShowInsufficientBalanceModal(false)}
               android_ripple={{ color: '#ccc' }}
             >
@@ -735,9 +756,9 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     backgroundColor: '#ff4444',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -793,11 +814,13 @@ const styles = StyleSheet.create({
     borderWidth: 1, // Add border
     borderColor: '#bdbdbd', // Slightly darker gray border
   },
+  deleteConfirm: {
+    backgroundColor: 'red', // Light gray background
+    borderWidth: 1, // Add border
+    borderColor: '#bdbdbd', // Slightly darker gray border
+  },
   addButton: {
     backgroundColor: '#6a11cb',
-  },
-  deleteButton: {
-    backgroundColor: '#d32f2f',
   },
   buttonText: {
     fontSize: 16,

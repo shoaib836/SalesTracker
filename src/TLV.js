@@ -35,6 +35,10 @@ const TLV = () => {
   const [isEditing, setIsEditing] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [entryToDelete, setEntryToDelete] = useState(null);
 
   // Animation effects
   useEffect(() => {
@@ -201,7 +205,8 @@ const TLV = () => {
 
   const saveEntry = () => {
     if (!currentEntry.productName || !currentEntry.amountReceived) {
-      Alert.alert('Error', 'Product name and amount received are required');
+      setErrorMessage('Product name and amount received are required');
+      setShowErrorModal(true);
       return;
     }
 
@@ -227,14 +232,16 @@ const TLV = () => {
     setShowAddEditModal(false);
   };
 
-  const deleteEntry = id => {
-    Alert.alert('Delete Entry', 'Are you sure you want to delete this entry?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        onPress: () => setEntries(entries.filter(entry => entry.id !== id)),
-      },
-    ]);
+  const confirmDeleteEntry = id => {
+    setEntryToDelete(id);
+    setShowDeleteModal(true);
+  };
+
+  const deleteEntry = () => {
+    if (!entryToDelete) return;
+    setEntries(entries.filter(entry => entry.id !== entryToDelete));
+    setEntryToDelete(null);
+    setShowDeleteModal(false);
   };
 
   if (isLoading) {
@@ -370,7 +377,7 @@ const TLV = () => {
                       <Icon name="edit" size={20} color="#fff" />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      onPress={() => deleteEntry(item.id)}
+                      onPress={() => confirmDeleteEntry(item.id)}
                       style={styles.deleteButton}
                     >
                       <Icon name="delete" size={20} color="#fff" />
@@ -478,6 +485,70 @@ const TLV = () => {
           </View>
         </View>
       </Modal>
+      {/* Error Modal */}
+      <Modal
+        visible={showErrorModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowErrorModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModal}>
+            <View style={styles.modalHeader}>
+              <Icon name="error" size={32} color="#d32f2f" />
+              <Text style={styles.modalTitle}>Error</Text>
+            </View>
+            <Text style={styles.modalText}>{errorMessage}</Text>
+            <Pressable
+              style={[styles.modalButton, styles.okButton]}
+              onPress={() => setShowErrorModal(false)}
+              android_ripple={{ color: '#6a11cb' }}
+            >
+              <Text style={styles.modalButtonText}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={showDeleteModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModal}>
+            <View style={styles.modalHeader}>
+              <Icon name="warning" size={32} color="#FFA000" />
+              <Text style={styles.modalTitle}>Confirm Delete</Text>
+            </View>
+            <Text style={styles.modalText}>
+              Are you sure you want to delete this entry?
+            </Text>
+            <View style={styles.modalButtonRow}>
+              <Pressable
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowDeleteModal(false)}
+                android_ripple={{ color: '#e0e0e0' }}
+              >
+                <Text style={[styles.modalButtonText, { color: '#333' }]}>
+                  Cancel
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, styles.deleteConfirm]}
+                onPress={deleteEntry}
+                android_ripple={{ color: '#d32f2f' }}
+              >
+                <Text style={[styles.modalButtonText, { color: '#fff' }]}>
+                  Delete
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -566,7 +637,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   detailValue: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
   },
   modalContainer: {
@@ -725,6 +796,56 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  confirmModal: {
+    backgroundColor: '#fff',
+    width: '90%',
+    borderRadius: 16,
+    padding: 24,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginLeft: 12,
+  },
+  modalText: {
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  modalButton: {
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  okButton: {
+    backgroundColor: '#6a11cb',
+  },
+  cancelButton: {
+    backgroundColor: '#f5f5f5',
+  },
+  deleteConfirm: {
+    backgroundColor: '#d32f2f',
+  },
+  modalButtonText: {
     fontSize: 16,
     fontWeight: '600',
   },
