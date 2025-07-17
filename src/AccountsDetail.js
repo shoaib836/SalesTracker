@@ -10,6 +10,11 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
+  ScrollView,
 } from 'react-native';
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -92,6 +97,28 @@ const AccountsDetail = () => {
     loadAllAccountsData();
   }, []);
 
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 800,
+        easing: Easing.out(Easing.exp),
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Uncomment this line to force update the storage with default months
+    // forceUpdateAsyncStorage();
+
+    // Then load the data as usual
+    loadAllAccountsData();
+  }, []);
+
   const loadAllAccountsData = async () => {
     try {
       const storedAccounts = await AsyncStorage.getItem('@all_accounts');
@@ -121,27 +148,9 @@ const AccountsDetail = () => {
   };
 
   const initializeDefaultData = async () => {
-    const currentMonthYear = getCurrentMonthYear();
     const defaultAccounts = accounts.map(account => ({
       ...account,
-      months: [
-        {
-          id: Date.now().toString(),
-          name: currentMonthYear,
-          orders: 0,
-          income: 0,
-          cost: 0,
-          profit: 0,
-        },
-        {
-          id: '1',
-          name: 'June 2025',
-          orders: 0,
-          income: 0,
-          cost: 0,
-          profit: 0,
-        },
-      ],
+      months: getDefaultMonths(),
     }));
 
     setAccounts(defaultAccounts);
@@ -149,6 +158,78 @@ const AccountsDetail = () => {
       '@all_accounts',
       JSON.stringify(defaultAccounts),
     );
+  };
+
+  const getDefaultMonths = () => {
+    const currentMonthYear = getCurrentMonthYear();
+    return [
+      {
+        id: `${Date.now()}-1`,
+        name: currentMonthYear,
+        orders: 0,
+        income: 0,
+        cost: 0,
+        profit: 0,
+      },
+      {
+        id: `${Date.now()}-2`,
+        name: 'June 2025',
+        orders: 0,
+        income: 0,
+        cost: 0,
+        profit: 0,
+      },
+      {
+        id: `${Date.now()}-3`,
+        name: 'May 2025',
+        orders: 0,
+        income: 0,
+        cost: 0,
+        profit: 0,
+      },
+      {
+        id: `${Date.now()}-4`,
+        name: 'April 2025',
+        orders: 0,
+        income: 0,
+        cost: 0,
+        profit: 0,
+      },
+      {
+        id: `${Date.now()}-5`,
+        name: 'March 2025',
+        orders: 0,
+        income: 0,
+        cost: 0,
+        profit: 0,
+      },
+    ];
+  };
+
+  const forceUpdateAsyncStorage = async () => {
+    try {
+      // Get current data
+      const storedAccounts = await AsyncStorage.getItem('@all_accounts');
+      let parsedAccounts = storedAccounts
+        ? JSON.parse(storedAccounts)
+        : accounts;
+
+      // Update all accounts with default months
+      const updatedAccounts = parsedAccounts.map(account => ({
+        ...account,
+        months: getDefaultMonths(),
+      }));
+
+      // Save the updated structure
+      await AsyncStorage.setItem(
+        '@all_accounts',
+        JSON.stringify(updatedAccounts),
+      );
+      setAccounts(updatedAccounts);
+      console.log('AsyncStorage successfully updated with default months');
+    } catch (error) {
+      console.error('Failed to update AsyncStorage', error);
+    }
   };
 
   const getCurrentMonthYear = () => {
@@ -591,91 +672,112 @@ const AccountsDetail = () => {
       </Modal>
 
       {/* Add/Edit Entry Modal */}
+      {/* Add/Edit Entry Modal */}
       <Modal
         visible={showAddEditModal}
         animationType="slide"
         onRequestClose={() => setShowAddEditModal(false)}
       >
-        <View style={styles.modalContainer}>
-          <View
-            style={[
-              styles.modalHeader,
-              { backgroundColor: selectedAccount?.color || '#6a11cb' },
-            ]}
-          >
-            <TouchableOpacity onPress={() => setShowAddEditModal(false)}>
-              <Icon name="close" size={24} color="#fff" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>
-              {isEditing ? 'Edit Entry' : 'Add New Entry'}
-            </Text>
-            <View style={{ width: 24 }} />
-          </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalContainer}>
+              <View
+                style={[
+                  styles.modalHeader,
+                  { backgroundColor: selectedAccount?.color || '#6a11cb' },
+                ]}
+              >
+                <TouchableOpacity onPress={() => setShowAddEditModal(false)}>
+                  <Icon name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>
+                  {isEditing ? 'Edit Entry' : 'Add New Entry'}
+                </Text>
+                <View style={{ width: 24 }} />
+              </View>
 
-          <View style={styles.formContainer}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Product Name *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter product name"
-                placeholderTextColor="#888"
-                value={currentEntry.productName}
-                onChangeText={text =>
-                  setCurrentEntry({ ...currentEntry, productName: text })
-                }
-              />
-            </View>
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Amount Received (Rs.) *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter amount received"
-                placeholderTextColor="#888"
-                keyboardType="numeric"
-                value={currentEntry.amountReceived}
-                onChangeText={text =>
-                  setCurrentEntry({ ...currentEntry, amountReceived: text })
-                }
-              />
-            </View>
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Production Cost (Rs.)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter production cost"
-                placeholderTextColor="#888"
-                keyboardType="numeric"
-                value={currentEntry.productionCost}
-                onChangeText={text =>
-                  setCurrentEntry({ ...currentEntry, productionCost: text })
-                }
-              />
-            </View>
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Delivery Cost (Rs.)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter delivery cost"
-                placeholderTextColor="#888"
-                keyboardType="numeric"
-                value={currentEntry.deliveryCost}
-                onChangeText={text =>
-                  setCurrentEntry({ ...currentEntry, deliveryCost: text })
-                }
-              />
-            </View>
+              <ScrollView
+                contentContainerStyle={styles.scrollContainer}
+                keyboardShouldPersistTaps="handled"
+              >
+                <View style={styles.formContainer}>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Product Name *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter product name"
+                      placeholderTextColor="#888"
+                      value={currentEntry.productName}
+                      onChangeText={text =>
+                        setCurrentEntry({ ...currentEntry, productName: text })
+                      }
+                    />
+                  </View>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>
+                      Amount Received (Rs.) *
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter amount received"
+                      placeholderTextColor="#888"
+                      keyboardType="numeric"
+                      value={currentEntry.amountReceived}
+                      onChangeText={text =>
+                        setCurrentEntry({
+                          ...currentEntry,
+                          amountReceived: text,
+                        })
+                      }
+                    />
+                  </View>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Production Cost (Rs.)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter production cost"
+                      placeholderTextColor="#888"
+                      keyboardType="numeric"
+                      value={currentEntry.productionCost}
+                      onChangeText={text =>
+                        setCurrentEntry({
+                          ...currentEntry,
+                          productionCost: text,
+                        })
+                      }
+                    />
+                  </View>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Delivery Cost (Rs.)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter delivery cost"
+                      placeholderTextColor="#888"
+                      keyboardType="numeric"
+                      value={currentEntry.deliveryCost}
+                      onChangeText={text =>
+                        setCurrentEntry({ ...currentEntry, deliveryCost: text })
+                      }
+                    />
+                  </View>
 
-            <Pressable
-              style={styles.submitButton}
-              onPress={saveEntry}
-              android_ripple={{ color: '#4a00e0' }}
-            >
-              <Text style={styles.submitButtonText}>
-                {isEditing ? 'Update Entry' : 'Save Entry'}
-              </Text>
-            </Pressable>
-          </View>
-        </View>
+                  <Pressable
+                    style={styles.submitButton}
+                    onPress={saveEntry}
+                    android_ripple={{ color: '#4a00e0' }}
+                  >
+                    <Text style={styles.submitButtonText}>
+                      {isEditing ? 'Update Entry' : 'Save Entry'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Error Modal */}
@@ -716,7 +818,7 @@ const AccountsDetail = () => {
               <Icon name="warning" size={32} color="#FFA000" />
               <Text style={styles.modalTitle}>Confirm Delete</Text>
             </View>
-            <Text style={styles.modalText}>
+            <Text style={[styles.modalText, { marginBottom: 20 }]}>
               Are you sure you want to delete this entry?
             </Text>
             <View style={styles.modalButtonRow}>
@@ -907,10 +1009,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
   },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
+  // modalContainer: {
+  //   flex: 1,
+  //   backgroundColor: '#f8f9fa',
+  // },
   modalHeader: {
     paddingVertical: 20,
     paddingHorizontal: 16,
@@ -955,18 +1057,19 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   monthDetails: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 8,
   },
   detailItem: {
     alignItems: 'center',
+    flexDirection: 'row',
     flex: 1,
   },
   detailLabel: {
     fontSize: 12,
     color: '#666',
     marginBottom: 4,
+    width: 80,
   },
   detailValue: {
     fontSize: 12,
@@ -1084,27 +1187,27 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontWeight: '500',
   },
-  input: {
-    backgroundColor: '#f9f9f9',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: '#333',
-  },
-  submitButton: {
-    backgroundColor: '#6a11cb',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 16,
-    shadowColor: '#6a11cb',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
-  },
+  // input: {
+  //   backgroundColor: '#f9f9f9',
+  //   borderWidth: 1,
+  //   borderColor: '#ddd',
+  //   borderRadius: 12,
+  //   padding: 16,
+  //   fontSize: 16,
+  //   color: '#333',
+  // },
+  // submitButton: {
+  //   backgroundColor: '#6a11cb',
+  //   borderRadius: 12,
+  //   padding: 16,
+  //   alignItems: 'center',
+  //   marginTop: 16,
+  //   shadowColor: '#6a11cb',
+  //   shadowOffset: { width: 0, height: 5 },
+  //   shadowOpacity: 0.3,
+  //   shadowRadius: 10,
+  //   elevation: 5,
+  // },
   submitButtonText: {
     color: '#fff',
     fontSize: 16,
@@ -1183,6 +1286,36 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 3,
     elevation: 3,
+  },
+  scrollContainer: {
+    flexGrow: 1,
+    paddingBottom: 20,
+  },
+  formContainer: {
+    padding: 16,
+    flex: 1,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  input: {
+    backgroundColor: '#f9f9f9',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 8, // Add some margin at the bottom
+  },
+  submitButton: {
+    backgroundColor: '#6a11cb',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 20, // Add some margin at the bottom
   },
 });
 

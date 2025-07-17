@@ -9,9 +9,7 @@ import AccountsDetail from './src/AccountsDetail';
 import Partners from './src/Partners';
 import CompanyFinances from './src/CompanyFinances';
 import ExpenditureDetails from './src/Expenditures';
-import HNH from './src/HNH';
-import HSH from './src/HSH';
-import TLV from './src/TLV';
+import Billings from './src/Billings';
 
 const Stack = createNativeStackNavigator();
 
@@ -59,19 +57,9 @@ const App = () => {
           options={{ title: 'Expenditure Details', headerShown: false }}
         />
         <Stack.Screen
-          name="HNH"
-          component={HNH}
-          options={{ title: 'HNH', headerShown: false }}
-        />
-        <Stack.Screen
-          name="HSH"
-          component={HSH}
-          options={{ title: 'HSH', headerShown: false }}
-        />
-        <Stack.Screen
-          name="TLV"
-          component={TLV}
-          options={{ title: 'TLV', headerShown: false }}
+          name="Billings"
+          component={Billings}         
+          options={{ title: 'Billings', headerShown: false }}
         />
       </Stack.Navigator>
     </NavigationContainer>

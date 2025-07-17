@@ -202,7 +202,7 @@ const Expenditures = () => {
   const deductFromBalance = async amount => {
     try {
       const balanceData = await AsyncStorage.getItem('@current_balance');
-      let currentBalance = balanceData ? parseFloat(balanceData) : 800000;
+      let currentBalance = balanceData ? parseFloat(balanceData) : 0;
       currentBalance -= amount;
       await AsyncStorage.setItem('@current_balance', currentBalance.toString());
       return true;
@@ -502,7 +502,7 @@ const Expenditures = () => {
                 <Text style={styles.modalButtonText}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={[styles.modalButton, styles.deleteButton]}
+                style={[styles.modalButton, styles.deleteConfirm]}
                 onPress={deleteExpenditure}
                 android_ripple={{ color: '#d32f2f' }}
               >
@@ -786,6 +786,9 @@ const styles = StyleSheet.create({
   modalButtonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  deleteConfirm: {
+    backgroundColor: '#d32f2f',
   },
 });
 

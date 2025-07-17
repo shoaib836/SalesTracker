@@ -8,6 +8,7 @@ const menuItems = [
   { id: 2, title: 'Company Finances', screenName: 'CompanyFinances', icon: 'attach-money' },
   { id: 3, title: 'Account Details', screenName: 'AccountsDetails', icon: 'account-balance-wallet' },
   { id: 4, title: 'Expenditures', screenName: 'ExpenditureDetails', icon: 'pie-chart' },
+  { id: 5, title: 'Billings', screenName: 'Billings', icon: 'payments' },
 ];
 
 const HomeScreen = () => {
@@ -82,7 +83,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
-    marginBottom: 20,
   },
   headerText: {
     color: 'white',

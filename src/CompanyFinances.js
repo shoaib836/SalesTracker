@@ -112,6 +112,26 @@ const CompanyFinances = () => {
 
   // resetCompanyBalance();
 
+  const deductBillFromBalance = async (amount) => {
+    try {
+      const newBalance = currentBalance - amount;
+      setCurrentBalance(newBalance);
+      await AsyncStorage.setItem('@current_balance', newBalance.toString());
+    } catch (error) {
+      console.error('Failed to update balance', error);
+    }
+  };
+
+  const restoreBalanceFromDeletedBill = async (amount) => {
+    try {
+      const newBalance = currentBalance + amount;
+      setCurrentBalance(newBalance);
+      await AsyncStorage.setItem('@current_balance', newBalance.toString());
+    } catch (error) {
+      console.error('Failed to update balance', error);
+    }
+  };
+
   const confirmDeleteAsset = id => {
     setAssetToDelete(id);
   };
